@@ -3,6 +3,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { Button, C, ExerciseMotion, IconButton, Screen, Surface, TitleBlock } from '@/components/common';
+import { AnatomyMap } from '@/components/AnatomyMap';
 import { findExercise } from '@/data/catalog';
 import { useTraining } from '@/context/TrainingContext';
 
@@ -22,8 +23,9 @@ export default function ExerciseDetailScreen() {
     <View style={styles.top}><IconButton icon="chevron-left" label="Назад" onPress={() => router.back()} /><Text style={styles.topLabel}>КАРТОЧКА УПРАЖНЕНИЯ</Text><View style={{ width: 40 }} /></View>
     <TitleBlock eyebrow={exercise.group + ' · ' + exercise.equipment} title={exercise.name} note={exercise.summary} />
     <ExerciseMotion exercise={exercise} />
-    <View style={styles.targetRow}><View style={styles.targetIcon}><Feather name="target" size={16} color={C.primary} /></View><View style={styles.targetCopy}><Text style={styles.targetLabel}>ОСНОВНАЯ НАГРУЗКА</Text><Text style={styles.targetName}>{exercise.target}</Text></View><Text style={styles.movement}>{exercise.movement.toUpperCase()}</Text></View>
-    <View style={styles.sectionHead}><Text style={styles.sectionTitle}>Техника выполнения</Text><Text style={styles.sectionCount}>3 шага</Text></View>
+    <View style={styles.targetRow}><View style={styles.targetIcon}><Feather name="target" size={16} color={C.primary} /></View><View style={styles.targetCopy}><Text style={styles.targetLabel}>УЧАСТВУЮЩИЕ МЫШЦЫ</Text><Text style={styles.targetName}>{exercise.target}</Text></View><Text style={styles.movement}>{exercise.tracking === 'running' ? 'БЕГ' : exercise.tracking === 'rounds' ? 'РАУНДЫ' : exercise.movement.toUpperCase()}</Text></View>
+    <AnatomyMap muscles={exercise.muscles} />
+    <View style={styles.sectionHead}><Text style={styles.sectionTitle}>Техника выполнения</Text><Text style={styles.sectionCount}>{exercise.steps.length} шага</Text></View>
     <Surface style={styles.steps}>{exercise.steps.map((step, index) => <View key={step} style={styles.step}><View style={styles.stepNumber}><Text style={styles.stepNumberText}>{String(index + 1).padStart(2, '0')}</Text></View><Text style={styles.stepText}>{step}</Text></View>)}</Surface>
     <Surface style={styles.safety}><View style={styles.safetyHead}><View style={styles.safetyIcon}><Feather name="shield" size={17} color={C.warning} /></View><Text style={styles.safetyTitle}>Техника безопасности</Text></View><Text style={styles.safetyText}>{exercise.safety}</Text></Surface>
     <Button title={activeWorkout ? 'Добавить в тренировку' : 'Начать с этим упражнением'} icon="plus" onPress={begin} testID="add-exercise-detail" />

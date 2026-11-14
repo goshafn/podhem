@@ -5,7 +5,8 @@ import { findExercise, PlanExercise, workoutPlans } from '@/data/catalog';
 const STORAGE_KEY = 'podhod-training-v1';
 
 export interface SetEntry { id: string; weight: string; reps: string; completed: boolean; previousLabel: string | null; }
-export interface WorkoutExercise { id: string; exerciseId: string; name: string; sets: SetEntry[]; }
+export interface ActivityLog { kind: 'running' | 'rounds'; durationMinutes: string; distanceKm?: string; rounds?: string; completed: boolean; }
+export interface WorkoutExercise { id: string; exerciseId: string; name: string; sets: SetEntry[]; activity?: ActivityLog; }
 export interface WorkoutSession { id: string; name: string; startedAt: number; completedAt: number; exercises: WorkoutExercise[]; tonnage: number; }
 export interface ActiveWorkout { id: string; name: string; startedAt: number; exercises: WorkoutExercise[]; restUntil: number | null; }
 interface PersistedState { activeWorkout: ActiveWorkout | null; workouts: WorkoutSession[]; savedPlanIds: string[]; restSeconds: number; }
@@ -18,6 +19,8 @@ interface TrainingValue extends PersistedState {
   addExercise: (exerciseId: string) => boolean;
   updateSet: (exerciseEntryId: string, setId: string, field: 'weight' | 'reps', value: string) => void;
   toggleSet: (exerciseEntryId: string, setId: string) => boolean;
+  updateActivity: (exerciseEntryId: string, field: 'durationMinutes' | 'distanceKm' | 'rounds', value: string) => void;
+  toggleActivity: (exerciseEntryId: string) => boolean;
   addSet: (exerciseEntryId: string) => void;
   removeSet: (exerciseEntryId: string, setId: string) => void;
   setRestSeconds: (seconds: number) => void;
@@ -39,6 +42,12 @@ const priorWorkoutFor = (exerciseId: string, workouts: WorkoutSession[]) => work
 function makeWorkoutExercise(exerciseId: string, workouts: WorkoutSession[], count = 3, reps = '10'): WorkoutExercise | null {
   const exercise = findExercise(exerciseId);
   if (!exercise) return null;
+  if (exercise.tracking === 'running') {
+    return { id: makeId(), exerciseId, name: exercise.name, sets: [], activity: { kind: 'running', durationMinutes: '', distanceKm: '', completed: false } };
+  }
+  if (exercise.tracking === 'rounds') {
+    return { id: makeId(), exerciseId, name: exercise.name, sets: [], activity: { kind: 'rounds', durationMinutes: '', rounds: '', completed: false } };
+  }
   const prior = priorWorkoutFor(exerciseId, workouts)?.exercises.find((entry) => entry.exerciseId === exerciseId);
   const sets: SetEntry[] = Array.from({ length: count }, (_, index) => {
     const previous = prior?.sets[index] ?? prior?.sets[0];
@@ -64,8 +73,14 @@ function calculateRecord(workouts: WorkoutSession[], exerciseId: string) {
 function validWorkoutExercise(value: unknown): value is WorkoutExercise {
   if (!value || typeof value !== 'object') return false;
   const entry = value as Partial<WorkoutExercise>;
+  const activityValid = entry.activity === undefined || Boolean(entry.activity && typeof entry.activity === 'object' &&
+    (entry.activity.kind === 'running' || entry.activity.kind === 'rounds') &&
+    typeof entry.activity.durationMinutes === 'string' &&
+    (entry.activity.distanceKm === undefined || typeof entry.activity.distanceKm === 'string') &&
+    (entry.activity.rounds === undefined || typeof entry.activity.rounds === 'string') &&
+    typeof entry.activity.completed === 'boolean');
   return typeof entry.id === 'string' && typeof entry.exerciseId === 'string' && typeof entry.name === 'string' &&
-    Array.isArray(entry.sets) && entry.sets.every((set) => Boolean(set && typeof set === 'object' &&
+    activityValid && Array.isArray(entry.sets) && entry.sets.every((set) => Boolean(set && typeof set === 'object' &&
       typeof set.id === 'string' && typeof set.weight === 'string' && typeof set.reps === 'string' &&
       typeof set.completed === 'boolean' && (set.previousLabel === null || typeof set.previousLabel === 'string')));
 }
@@ -190,6 +205,33 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
     return allowed;
   }, [commit]);
 
+  const updateActivity = useCallback((exerciseEntryId: string, field: 'durationMinutes' | 'distanceKm' | 'rounds', value: string) => {
+    const cleaned = value.replace(/[^\d.,]/g, '').replace(',', '.');
+    commit((state) => {
+      if (!state.activeWorkout) return state;
+      return { ...state, activeWorkout: { ...state.activeWorkout, exercises: state.activeWorkout.exercises.map((entry) => entry.id !== exerciseEntryId || !entry.activity ? entry : {
+        ...entry, activity: { ...entry.activity, [field]: cleaned },
+      }) } };
+    });
+  }, [commit]);
+
+  const toggleActivity = useCallback((exerciseEntryId: string) => {
+    let allowed = true;
+    commit((state) => {
+      if (!state.activeWorkout) return state;
+      const exercises = state.activeWorkout.exercises.map((entry) => {
+        if (entry.id !== exerciseEntryId || !entry.activity) return entry;
+        const next = !entry.activity.completed;
+        const duration = numberValue(entry.activity.durationMinutes);
+        const secondary = entry.activity.kind === 'running' ? numberValue(entry.activity.distanceKm ?? '') : numberValue(entry.activity.rounds ?? '');
+        if (next && (duration < 1 || (entry.activity.kind === 'rounds' && secondary < 1))) { allowed = false; return entry; }
+        return { ...entry, activity: { ...entry.activity, completed: next } };
+      });
+      return { ...state, activeWorkout: { ...state.activeWorkout, exercises } };
+    });
+    return allowed;
+  }, [commit]);
+
   const addSet = useCallback((exerciseEntryId: string) => commit((state) => {
     if (!state.activeWorkout) return state;
     return { ...state, activeWorkout: { ...state.activeWorkout, exercises: state.activeWorkout.exercises.map((entry) => entry.id !== exerciseEntryId ? entry : {
@@ -213,7 +255,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
   const finishWorkout = useCallback(() => {
     const current = dataRef.current;
     const active = current.activeWorkout;
-    if (!active || !active.exercises.some((entry) => entry.sets.some((set) => set.completed))) return null;
+    if (!active || !active.exercises.some((entry) => entry.sets.some((set) => set.completed) || entry.activity?.completed)) return null;
     let tonnage = 0;
     const personalRecords: FinishSummary['personalRecords'] = [];
     active.exercises.forEach((entry) => {
@@ -252,7 +294,7 @@ export function TrainingProvider({ children }: { children: ReactNode }) {
     } catch { return 'Не удалось прочитать JSON. Проверьте текст файла и попробуйте ещё раз.'; }
   }, [persist]);
 
-  const value = useMemo<TrainingValue>(() => ({ ...data, isReady, storageError, lastFinish, startWorkout, addExercise, updateSet, toggleSet, addSet, removeSet, setRestSeconds, finishWorkout, discardWorkout, toggleSavedPlan, exportBackup, importBackup }), [data, isReady, storageError, lastFinish, startWorkout, addExercise, updateSet, toggleSet, addSet, removeSet, setRestSeconds, finishWorkout, discardWorkout, toggleSavedPlan, exportBackup, importBackup]);
+  const value = useMemo<TrainingValue>(() => ({ ...data, isReady, storageError, lastFinish, startWorkout, addExercise, updateSet, toggleSet, updateActivity, toggleActivity, addSet, removeSet, setRestSeconds, finishWorkout, discardWorkout, toggleSavedPlan, exportBackup, importBackup }), [data, isReady, storageError, lastFinish, startWorkout, addExercise, updateSet, toggleSet, updateActivity, toggleActivity, addSet, removeSet, setRestSeconds, finishWorkout, discardWorkout, toggleSavedPlan, exportBackup, importBackup]);
   return <TrainingContext.Provider value={value}>{children}</TrainingContext.Provider>;
 }
 

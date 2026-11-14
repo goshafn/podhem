@@ -2,7 +2,7 @@ import React, { ReactNode, useEffect, useRef } from 'react';
 import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { Circle, Ellipse, Path, Rect, Svg, SvgXml } from 'react-native-svg';
+import { Circle, Path, Svg, SvgXml } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import colors from '@/constants/colors';
 import { Exercise } from '@/data/catalog';
@@ -51,7 +51,6 @@ export function ExerciseMotion({ exercise, small = false }: { exercise: Exercise
     return () => animation.stop();
   }, [lift]);
   const shift = lift.interpolate({ inputRange: [0, 1], outputRange: [0, -14] });
-  const size = small ? 48 : 74;
   if (exercise.animation?.format === 'lottie' && Platform.OS !== 'web') {
     return <View style={[styles.motion, small && styles.motionSmall]} accessibilityLabel={'Зацикленная анимация упражнения: ' + exercise.name}>
       <LottiePlayer source={exercise.animation.source} style={styles.mediaAnimation} />
@@ -70,31 +69,53 @@ export function ExerciseMotion({ exercise, small = false }: { exercise: Exercise
       <Text style={styles.motionCaption}>{exercise.target}</Text>
     </View>;
   }
-  return <View style={[styles.motion, small && styles.motionSmall]} accessibilityLabel={'Зацикленная заглушка анимации: ' + exercise.name}>
-    <Animated.View style={[styles.motionBar, { transform: [{ translateY: shift }] }]} />
-    <View style={[styles.motionPlate, { left: '30%' }]} /><View style={[styles.motionPlate, { right: '30%' }]} />
-    <View style={[styles.motionFigure, { height: size, width: size }]}><BodyFigure exercise={exercise} /></View>
-    <Text style={styles.motionCaption}>{exercise.target}</Text>
+  const motion = exercise.motion;
+  const isSupine = ['press-flat', 'press-incline', 'fly-mid', 'fly-low', 'skull-crusher', 'crunch'].includes(motion);
+  const isHinge = ['hinge', 'row', 'back-extension', 'pullover'].includes(motion);
+  const isLegDrive = ['squat', 'front-squat', 'leg-press', 'lunge', 'knee-extension', 'knee-flexion', 'hip-thrust', 'bridge', 'calf-raise', 'hip-abduction', 'run', 'kickboxing', 'judo'].includes(motion);
+  const isRaise = ['overhead-press', 'arnold-press', 'lateral-raise', 'front-raise', 'face-pull', 'rear-delt-fly', 'upright-row', 'boxing'].includes(motion);
+  const isCurl = ['curl', 'hammer-curl', 'preacher-curl', 'triceps-pushdown', 'overhead-triceps'].includes(motion);
+  const isCore = ['plank', 'crunch', 'leg-raise', 'cable-crunch', 'rotation', 'rollout'].includes(motion);
+  const bodyY = lift.interpolate({ inputRange: [0, 1], outputRange: [0, isLegDrive ? -12 : -3] });
+  const bodyRotate = lift.interpolate({ inputRange: [0, 1], outputRange: ['0deg', isHinge ? '-12deg' : isCore ? '-7deg' : motion === 'judo' ? '8deg' : '0deg'] });
+  const armRotate = lift.interpolate({ inputRange: [0, 1], outputRange: [isSupine || isRaise ? '23deg' : '-5deg', isSupine || isRaise ? '-24deg' : isCurl ? '-40deg' : '10deg'] });
+  const loadShift = lift.interpolate({ inputRange: [0, 1], outputRange: [8, -11] });
+  const punchShift = lift.interpolate({ inputRange: [0, 1], outputRange: [0, 25] });
+  const showBar = exercise.equipment === 'Штанга';
+  const showDumbbells = exercise.equipment === 'Гантели';
+  const showCable = exercise.equipment === 'Блок';
+  const posePath = isSupine
+    ? 'M15 70 L34 70 L53 63 L87 63 L101 70 L119 70 M56 62 L47 47 M85 62 L94 47 M87 63 L109 79 M49 64 L35 80'
+    : isHinge
+      ? 'M59 29 L69 42 L62 61 L52 78 L37 91 M69 42 L90 47 L104 59 M62 61 L81 69 L93 84 M59 29 L44 23 M52 78 L36 99'
+      : isCore || motion === 'push-up'
+        ? 'M20 69 L37 69 L56 62 L91 62 L108 69 L121 69 M60 62 L45 78 M88 62 L103 78 M61 63 L51 86 M92 63 L102 86'
+        : 'M68 23 L68 43 L68 65 L68 84 M68 44 L48 47 L39 65 M68 44 L87 47 L97 65 M68 84 L55 105 M68 84 L82 105';
+  const head = isSupine || isCore ? { cx: 18, cy: 70 } : { cx: 68, cy: 15 };
+  const detailLabel = exercise.tracking === 'running' ? 'ВРЕМЯ · ДИСТАНЦИЯ' : exercise.tracking === 'rounds' ? 'ВРЕМЯ · РАУНДЫ' : exercise.equipment.toUpperCase();
+  return <View style={[styles.motion, small && styles.motionSmall]} accessibilityLabel={'Зацикленная демонстрация движения: ' + exercise.name}>
+    <View style={styles.motionStage}>
+      {isSupine ? <View style={styles.animationBench} /> : null}
+      <Animated.View style={[styles.animationBody, { transform: [{ translateY: bodyY }, { rotate: bodyRotate }] }]}>
+        <Svg width={small ? 105 : 154} height={small ? 78 : 112} viewBox="0 0 140 120">
+          <Circle cx={head.cx} cy={head.cy} r="8" fill={C.anatomyLight} />
+          <Path d={posePath} fill="none" stroke={C.anatomyLight} strokeWidth="11" strokeLinecap="round" strokeLinejoin="round" />
+          <Path d={posePath} fill="none" stroke={C.anatomyOutline} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
+      </Animated.View>
+      {showBar ? <Animated.View style={[styles.animationBar, { transform: [{ translateY: loadShift }] }]}><View style={styles.barShaft} /><View style={styles.barPlate} /><View style={[styles.barPlate, { right: 1 }]} /></Animated.View> : null}
+      {showDumbbells ? <Animated.View style={[styles.animationDumbbells, { transform: [{ translateY: loadShift }, { rotate: armRotate }] }]}><View style={styles.dumbbellHandle} /><View style={styles.dumbbellHead} /><View style={[styles.dumbbellHead, { right: -5 }]} /></Animated.View> : null}
+      {showCable ? <View style={styles.cableLine}><Animated.View style={[styles.cableHandle, { transform: [{ translateX: punchShift }] }]} /></View> : null}
+      {exercise.tracking === 'rounds' ? <Animated.View style={[styles.motionGlove, { transform: [{ translateX: punchShift }, { rotate: armRotate }] }]} /> : null}
+      {exercise.tracking === 'running' ? <Animated.View style={[styles.runTrail, { opacity: lift.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.95] }) }]}><View style={styles.runTrailLine} /><View style={styles.runTrailLine} /><View style={styles.runTrailLine} /></Animated.View> : null}
+    </View>
+    <Text style={styles.motionCaption}>{exercise.name}</Text>
+    <Text style={styles.motionSubcaption}>{detailLabel} · цикл движения</Text>
   </View>;
-}
-function BodyFigure({ exercise }: { exercise: Exercise }) {
-  const chest = exercise.group === 'Грудь' || exercise.group === 'Спина';
-  const shoulders = exercise.group === 'Плечи';
-  const arms = exercise.group === 'Руки';
-  const legs = exercise.group === 'Ноги';
-  const core = exercise.group === 'Пресс';
-  return <Svg width={48} height={64} viewBox="0 0 56 76" accessibilityLabel={'Выделена группа мышц: ' + exercise.group}>
-    <Circle cx="28" cy="8" r="6" fill={C.mutedForeground} />
-    <Path d="M18 18 Q28 13 38 18 L41 39 Q34 45 28 43 Q22 45 15 39 Z" fill={chest || shoulders ? C.primary : C.secondary} />
-    <Path d="M17 20 L9 38 M39 20 L47 38" stroke={arms || shoulders ? C.primary : C.secondary} strokeWidth="7" strokeLinecap="round" />
-    <Rect x="20" y="41" width="16" height="13" rx="5" fill={core ? C.primary : C.secondary} />
-    <Path d="M22 53 L18 70 M34 53 L38 70" stroke={legs ? C.primary : C.secondary} strokeWidth="8" strokeLinecap="round" />
-    {exercise.group === 'Спина' ? <Ellipse cx="28" cy="29" rx="5" ry="8" fill={C.primary} /> : null}
-  </Svg>;
 }
 export function ExerciseRow({ exercise, onPress, onAdd, added = false }: { exercise: Exercise; onPress: () => void; onAdd?: () => void; added?: boolean }) {
   return <Pressable onPress={onPress} style={({ pressed }) => [styles.exerciseRow, pressed && styles.pressed]}>
-    <View style={styles.exerciseGlyph}><MaterialCommunityIcons name="dumbbell" size={19} color={C.primary} /></View>
+    <View style={styles.exerciseGlyph}>{exercise.tracking === 'strength' ? <MaterialCommunityIcons name="dumbbell" size={19} color={C.primary} /> : <Feather name={exercise.tracking === 'running' ? 'wind' : 'target'} size={18} color={C.primary} />}</View>
     <View style={styles.exerciseCopy}><Text numberOfLines={1} style={styles.exerciseName}>{exercise.name}</Text><Text numberOfLines={1} style={styles.exerciseSub}>{exercise.target} · {exercise.equipment}</Text></View>
     {onAdd ? <IconButton icon={added ? 'check' : 'plus'} onPress={onAdd} label={added ? 'Упражнение добавлено' : 'Добавить упражнение'} highlighted={!added} /> : <Feather name="chevron-right" size={18} color={C.mutedForeground} />}
   </Pressable>;
@@ -121,6 +142,6 @@ const styles = StyleSheet.create({
   metric: { flex: 1, gap: 8 }, metricLabel: { fontSize: 11, color: C.mutedForeground }, metricValue: { color: C.foreground, fontSize: 22, fontWeight: '700' }, metricUnit: { color: C.mutedForeground, fontSize: 11, fontWeight: '500' },
   notice: { padding: 13, borderRadius: 14, backgroundColor: C.noticeBackground, flexDirection: 'row', gap: 9, alignItems: 'flex-start' }, noticeText: { flex: 1, color: C.noticeForeground, fontSize: 12, lineHeight: 18 },
   empty: { alignItems: 'center', paddingHorizontal: 22, paddingVertical: 32, gap: 10 }, emptyIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }, emptyTitle: { color: C.foreground, fontWeight: '700', fontSize: 16, textAlign: 'center' }, emptyNote: { color: C.mutedForeground, fontSize: 13, lineHeight: 19, textAlign: 'center' },
-  motion: { minHeight: 175, backgroundColor: C.card, borderRadius: 22, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border }, motionSmall: { minHeight: 88, width: 100 }, motionBar: { position: 'absolute', width: 110, height: 5, borderRadius: 3, backgroundColor: C.foreground, top: '48%' }, motionPlate: { position: 'absolute', width: 10, height: 24, borderRadius: 3, backgroundColor: C.primary, top: '42%' }, motionFigure: { alignItems: 'center', justifyContent: 'center', borderRadius: 40, backgroundColor: C.accent }, mediaAnimation: { width: '100%', height: 135 }, svgAnimation: { alignItems: 'center', justifyContent: 'center' }, motionCaption: { color: C.primary, fontSize: 11, fontWeight: '700', marginTop: 10, textAlign: 'center' },
+  motion: { minHeight: 182, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: C.card, borderRadius: 22, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.border }, motionSmall: { minHeight: 88, width: 100 }, motionStage: { width: '100%', height: 126, position: 'relative', alignItems: 'center', justifyContent: 'center' }, animationBody: { position: 'absolute', alignItems: 'center', justifyContent: 'center' }, animationBench: { position: 'absolute', bottom: 28, left: '50%', marginLeft: -66, width: 132, height: 7, borderRadius: 4, backgroundColor: C.border }, animationBar: { position: 'absolute', top: 37, left: '50%', marginLeft: -47, width: 94, height: 5, borderRadius: 4, backgroundColor: C.foreground, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, barShaft: { position: 'absolute', left: 7, right: 7, height: 3, borderRadius: 2, backgroundColor: C.foreground }, barPlate: { position: 'absolute', top: -8, width: 9, height: 21, borderRadius: 3, backgroundColor: C.primary }, animationDumbbells: { position: 'absolute', top: 42, left: '50%', marginLeft: -20, width: 40, height: 5, borderRadius: 4, backgroundColor: C.foreground, flexDirection: 'row', alignItems: 'center' }, dumbbellHandle: { position: 'absolute', left: 2, right: 2, height: 3, backgroundColor: C.foreground }, dumbbellHead: { position: 'absolute', left: -5, width: 8, height: 15, borderRadius: 3, backgroundColor: C.primary }, cableLine: { position: 'absolute', top: 23, bottom: 23, right: 29, width: 3, borderRadius: 2, backgroundColor: C.border }, cableHandle: { position: 'absolute', top: 48, width: 13, height: 17, borderRadius: 5, backgroundColor: C.primary }, motionGlove: { position: 'absolute', top: 43, right: '19%', width: 20, height: 20, borderRadius: 8, backgroundColor: C.musclePrimary }, runTrail: { position: 'absolute', left: '15%', bottom: 25, gap: 5 }, runTrailLine: { width: 20, height: 2, borderRadius: 2, backgroundColor: C.primary }, mediaAnimation: { width: '100%', height: 135 }, svgAnimation: { alignItems: 'center', justifyContent: 'center' }, motionCaption: { color: C.primary, fontSize: 11, fontWeight: '700', marginTop: 3, textAlign: 'center' }, motionSubcaption: { color: C.mutedForeground, fontSize: 8, marginTop: 2, textAlign: 'center', letterSpacing: 0.5 },
   exerciseRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.border }, exerciseGlyph: { width: 40, height: 40, borderRadius: 13, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' }, exerciseCopy: { flex: 1, gap: 4 }, exerciseName: { color: C.foreground, fontSize: 14, fontWeight: '600' }, exerciseSub: { color: C.mutedForeground, fontSize: 11 },
 });
